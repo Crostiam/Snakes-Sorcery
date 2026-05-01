@@ -148,13 +148,21 @@ const findFace = (rx, ry, rz) => {
     return bestFace;
 };
 
+// --- Timeout Helper for Firebase Connections ---
+const withTimeout = (promise, ms, customErrorMsg) => {
+    return Promise.race([
+        promise,
+        new Promise((_, reject) => setTimeout(() => reject(new Error(customErrorMsg)), ms))
+    ]);
+};
+
 // --- Main Application Component ---
 export default function App() {
     const [user, setUser] = useState(null);
     const [roomId, setRoomId] = useState(null);
     const [roomData, setRoomData] = useState(null);
     const [loading, setLoading] = useState(true);
-    const [authError, setAuthError] = useState(null); // Added strong error tracking!
+    const [authError, setAuthError] = useState(null); 
     
     useEffect(() => {
         const initAuth = async () => {
@@ -210,11 +218,11 @@ export default function App() {
                     <h2 className="text-2xl font-bold mb-2 text-red-300">Firebase Connection Failed</h2>
                     <p className="text-slate-300 text-sm mb-6 bg-black/30 p-3 rounded font-mono break-words">{authError}</p>
                     <div className="text-left text-sm text-slate-300 space-y-2">
-                        <p><strong>To fix this, check your Firebase Console:</strong></p>
+                        <p><strong>To fix this, check your settings:</strong></p>
                         <ul className="list-disc pl-5 space-y-1">
-                            <li>Go to Authentication &gt; Settings &gt; Authorized Domains and ensure your URL (e.g. <b>crostiam.github.io</b>) is added.</li>
-                            <li>Go to Authentication &gt; Sign-in method and ensure <b>Anonymous</b> is enabled.</li>
-                            <li>If running locally, disable your AdBlocker.</li>
+                            <li><b>Disable your browser's AdBlocker or Privacy Shield (like Opera GX's Shield) for this website.</b></li>
+                            <li>Go to Firebase Console &gt; Authentication &gt; Authorized Domains and ensure your URL (e.g. <b>crostiam.github.io</b>) is added.</li>
+                            <li>Ensure <b>Firestore Database</b> is actually created and Test Mode is enabled.</li>
                         </ul>
                     </div>
                     <button onClick={() => window.location.reload()} className="mt-6 w-full bg-slate-800 hover:bg-slate-700 text-white font-bold py-3 rounded-xl transition-colors border border-slate-600">
@@ -265,32 +273,38 @@ function LobbyScreen({ user, setRoomId }) {
             const newRoomId = Math.random().toString(36).substring(2, 6).toUpperCase();
             const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'snakes_rooms', newRoomId);
             
-            await setDoc(roomRef, {
-                status: 'waiting',
-                turnIndex: 0,
-                winner: null,
-                boardSpecials: generateBoardSpecials(boardConfig),
-                logs: ["Room created. Waiting for players..."],
-                players: [{
-                    id: user.uid,
-                    name: name.trim(),
-                    class: selectedClass,
-                    emoji: selectedEmoji,
-                    color: COLORS[0],
-                    position: 1,
-                    cards: [],
-                    hasShield: false,
-                    usedKnightCurse: false,
-                    usedKnightSnake: false,
-                    diceModifier: null
-                }]
-            });
+            // Wrapped in a timeout so it unfreezes and throws an error if an AdBlocker kills the connection
+            await withTimeout(
+                setDoc(roomRef, {
+                    status: 'waiting',
+                    turnIndex: 0,
+                    winner: null,
+                    boardSpecials: generateBoardSpecials(boardConfig),
+                    logs: ["Room created. Waiting for players..."],
+                    players: [{
+                        id: user.uid,
+                        name: name.trim(),
+                        class: selectedClass,
+                        emoji: selectedEmoji,
+                        color: COLORS[0],
+                        position: 1,
+                        cards: [],
+                        hasShield: false,
+                        usedKnightCurse: false,
+                        usedKnightSnake: false,
+                        diceModifier: null
+                    }]
+                }),
+                5000,
+                "Connection timed out. Your browser's AdBlocker/Shield is blocking the game's database! Please turn it off for this website."
+            );
+            
             setRoomId(newRoomId);
         } catch (err) {
             console.error(err);
-            setError("Failed to create room: " + err.message);
+            setError(err.message);
         } finally {
-            setIsProcessing(false); // ALWAYS release the button freeze!
+            setIsProcessing(false);
         }
     };
 
@@ -305,12 +319,19 @@ function LobbyScreen({ user, setRoomId }) {
         try {
             const code = roomCodeInput.trim().toUpperCase();
             const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'snakes_rooms', code);
-            const snap = await getDoc(roomRef);
+            
+            // Wrapped in a timeout
+            const snap = await withTimeout(
+                getDoc(roomRef),
+                5000,
+                "Connection timed out. Your browser's AdBlocker/Shield is blocking the game's database! Please turn it off for this website."
+            );
 
             if (snap.exists()) {
                 const data = snap.data();
                 if (data.status !== 'waiting' && !data.players.find(p => p.id === user.uid)) {
                     setError("Game already in progress!");
+                    setIsProcessing(false);
                     return;
                 }
                 if (!data.players.find(p => p.id === user.uid)) {
@@ -327,7 +348,11 @@ function LobbyScreen({ user, setRoomId }) {
                         usedKnightSnake: false,
                         diceModifier: null
                     };
-                    await updateDoc(roomRef, { players: [...data.players, newPlayer] });
+                    await withTimeout(
+                        updateDoc(roomRef, { players: [...data.players, newPlayer] }),
+                        5000,
+                        "Connection timed out. Your browser's AdBlocker/Shield is blocking the game's database! Please turn it off for this website."
+                    );
                 }
                 setRoomId(code);
             } else {
@@ -335,9 +360,9 @@ function LobbyScreen({ user, setRoomId }) {
             }
         } catch (err) {
             console.error(err);
-            setError("Failed to join room: " + err.message);
+            setError(err.message);
         } finally {
-            setIsProcessing(false); // ALWAYS release the button freeze!
+            setIsProcessing(false);
         }
     };
 
