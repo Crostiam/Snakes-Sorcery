@@ -1,73 +1,77 @@
-# React + TypeScript + Vite
+🐍 Snakes & Sorcery ✨
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Snakes & Sorcery is a chaotic, spell-slinging, real-time multiplayer twist on the classic game of Snakes and Ladders. Choose your hero, roll the physics-based 3D dice, cast devastating spells, and race your friends to tile 100!
 
-Currently, two official plugins are available:
+🎲 Features
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+Real-time Multiplayer: Create a private room code and invite your friends to play instantly.
 
-## React Compiler
+Physics-Based 3D Dice: Grab the dice and physically pull it back like a slingshot to throw it across the tavern table.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+6 Unique Hero Classes: Every player chooses a class with unique passive abilities:
 
-## Expanding the ESLint configuration
+🛡️ Knight: Immune to your first Snake or Curse. Blessings are twice as effective.
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+⚡ Rogue: Naturally quick, adding +1 to all your dice rolls permanently.
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+✨ Mage: Starts the game with an exclusive, highly powerful spell card.
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+💀 Warlock: Corrupts blessings, turning them into severe targeted curses against opponents.
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+🔥 Berserker: Relentless (1s automatically become 2s) and becomes "Enraged" (+2 to next roll) if hit by an enemy spell.
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+🧪 Alchemist: A brewmaster who draws an extra spell card whenever landing on a card tile.
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+Spell Cards: Land on special blue tiles to draw from a deck of magical cards. Cast spells like Sabotage to push opponents back, Illusion Swap to trade places, or Thief to steal their hard-earned cards.
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+Dynamic Board Generation: Play on the classic layout, or let the host configure a completely custom board with more curses, more blessings, and maximum chaos.
+
+🕹️ How to Play
+
+Host a Game: Enter your name, choose an avatar and class, and click "Create Room". Share the 4-letter code with your friends.
+
+Roll the Dice: When it's your turn, click "Open Dice Tray". Click and drag the 3D dice downwards, then release to launch it!
+
+Move: Once the math resolves (accounting for your base roll + any class modifiers or curses), physically drag your token to the highlighted glowing space.
+
+Survive the Board: * 🪜 Ladders: Instantly climb to a higher space.
+
+🐍 Snakes: Slide down to a lower space.
+
+✨ Blessings: Gain +1 to your next two rolls.
+
+💀 Curses: Suffer a -1 penalty to your next two rolls and discard a spell card.
+
+🃏 Spell Cards: Draw a powerful magic card to use on your turn.
+
+🛠️ Tech Stack
+
+Frontend: React (Vite)
+
+Styling: Tailwind CSS (v4)
+
+Backend / Multiplayer Engine: Firebase (Firestore real-time listeners & Anonymous Authentication)
+
+Physics: Custom CSS 3D Transforms and RequestAnimationFrame loop.
+
+🚀 Running Locally
+
+To run this project on your local machine:
+
+Clone the repository:
+
+git clone [https://github.com/](https://github.com/)<YOUR-USERNAME>/snakes-and-sorcery.git
+cd snakes-and-sorcery
+
+
+Install dependencies:
+
+npm install
+
+
+Start the development server:
+
+npm run dev
+
+
+Note: You will need to add your own Firebase configuration to App.jsx to enable multiplayer functionality.
