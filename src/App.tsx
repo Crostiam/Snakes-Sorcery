@@ -9,8 +9,7 @@ const userFirebaseConfig = {
     apiKey: "AIzaSyAM_rP5k7PAuBq8_Xkin23X9NYW5qolJsM",
     authDomain: "ludo-14af4.firebaseapp.com",
     projectId: "ludo-14af4",
-    // ADD OR VERIFY THIS LINE MATCHES YOUR LOCATION:
-    databaseURL: "https://ludo-14af4-default-rtdb.europe-west1.firebasedatabase.app",
+    databaseURL: "https://ludo-14af4-default-rtdb.europe-west1.firebasedatabase.app", // <- Make sure this line is exactly here
     storageBucket: "ludo-14af4.firebasestorage.app",
     messagingSenderId: "1097419329945",
     appId: "1:1097419329945:web:9a614fafeabf3239ea0308",
