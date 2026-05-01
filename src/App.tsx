@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, doc, setDoc, updateDoc, getDoc, onSnapshot } from 'firebase/firestore';
-import { Shield, Zap, Sparkles, Swords, Dice1, UserPlus, Copy, LogOut, Skull, Maximize, Minimize, Flame, FlaskConical } from 'lucide-react';
+import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
+import { getFirestore, collection, doc, setDoc, updateDoc, getDoc, onSnapshot } from 'firebase/firestore';
+import { Shield, Zap, Sparkles, Swords, Dice1, UserPlus, Copy, LogOut, Skull, Maximize, Minimize, Flame, FlaskConical, Trophy, RotateCcw } from 'lucide-react';
 
 // --- Firebase Initialization ---
-const firebaseConfig = {
+const userFirebaseConfig = {
   apiKey: "AIzaSyAM_rP5k7PAuBq8_Xkin23X9NYW5qolJsM",
   authDomain: "ludo-14af4.firebaseapp.com",
   databaseURL: "https://ludo-14af4-default-rtdb.europe-west1.firebasedatabase.app",
@@ -15,13 +15,17 @@ const firebaseConfig = {
   appId: "1:1097419329945:web:9a614fafeabf3239ea0308",
   measurementId: "G-J9KFD9VB38"
 };
-const appId = "snakes-game";
+
+const isCanvasEnvironment = typeof __firebase_config !== 'undefined';
+const firebaseConfig = isCanvasEnvironment ? JSON.parse(__firebase_config) : userFirebaseConfig;
+
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
+const appId = typeof __app_id !== 'undefined' ? __app_id : "snakes-and-sorcery-prod";
 
-// --- Global Styles for 3D Dice ---
+// --- Global Styles ---
 const GlobalStyles = () => (
     <style dangerouslySetInnerHTML={{__html: `
         .perspective-1000 { perspective: 1000px; }
@@ -29,7 +33,6 @@ const GlobalStyles = () => (
         .hide-scrollbar::-webkit-scrollbar { display: none; }
         .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
         
-        /* Special Tile Highlights */
         .special-bless { box-shadow: inset 0 0 25px rgba(251,191,36,0.6); }
         .special-curse { box-shadow: inset 0 0 25px rgba(168,85,247,0.6); }
         .special-card  { box-shadow: inset 0 0 25px rgba(59,130,246,0.6); }
@@ -45,7 +48,7 @@ const CLASSES = {
     rogue: { id: 'rogue', name: 'Rogue', desc: 'Adds +1 to all your dice rolls.', icon: Zap },
     mage: { id: 'mage', name: 'Mage', desc: 'Starts with 1 exclusive powerful Spell Card. Draws from a special pool.', icon: Sparkles },
     warlock: { id: 'warlock', name: 'Warlock', desc: "Blessings don't help you. You heavily curse (-2) an opponent instead.", icon: Skull },
-    berserker: { id: 'berserker', name: 'Berserker', desc: 'Relentless: 1s become 2s. Landing on Cards grants +2 to next roll.', icon: Flame },
+    berserker: { id: 'berserker', name: 'Berserker', desc: 'Relentless: 1s become 2s. If an opponent hits you with a spell, you gain +2 to your next roll.', icon: Flame },
     alchemist: { id: 'alchemist', name: 'Alchemist', desc: 'Brewmaster: Landing on a Card tile grants you +1 extra card.', icon: FlaskConical }
 };
 
@@ -78,15 +81,12 @@ const getRandomMageCard = () => {
     return keys[Math.floor(Math.random() * keys.length)];
 };
 
-// --- Fixed Snakes and Ladders Layout ---
 const FIXED_SNAKES_LADDERS = {
-    // Snakes (Red)
     16: { type: 'snake', to: 6 }, 47: { type: 'snake', to: 26 },
     49: { type: 'snake', to: 11 }, 56: { type: 'snake', to: 53 },
     62: { type: 'snake', to: 19 }, 64: { type: 'snake', to: 60 },
     87: { type: 'snake', to: 24 }, 93: { type: 'snake', to: 73 },
     95: { type: 'snake', to: 75 }, 98: { type: 'snake', to: 78 },
-    // Ladders (Green)
     2: { type: 'ladder', to: 38 }, 4: { type: 'ladder', to: 14 },
     9: { type: 'ladder', to: 31 }, 21: { type: 'ladder', to: 42 },
     28: { type: 'ladder', to: 84 }, 36: { type: 'ladder', to: 44 },
@@ -94,12 +94,7 @@ const FIXED_SNAKES_LADDERS = {
     80: { type: 'ladder', to: 100 }
 };
 
-// --- Default Board Configuration ---
-const DEFAULT_BOARD_CONFIG = {
-    curses: 4,
-    blessings: 4,
-    cards: 18
-};
+const DEFAULT_BOARD_CONFIG = { curses: 4, blessings: 4, cards: 18 };
 
 const generateBoardSpecials = (config) => {
     const specials = { ...FIXED_SNAKES_LADDERS };
@@ -111,20 +106,9 @@ const generateBoardSpecials = (config) => {
         return available.splice(idx, 1)[0];
     };
 
-    for(let i=0; i<config.curses; i++) {
-        const start = pullRandom();
-        if(start) specials[start] = { type: 'curse' };
-    }
-
-    for(let i=0; i<config.blessings; i++) {
-        const start = pullRandom();
-        if(start) specials[start] = { type: 'bless' };
-    }
-
-    for(let i=0; i<config.cards; i++) {
-        const start = pullRandom();
-        if(start) specials[start] = { type: 'card', val: Math.random() > 0.7 ? 2 : 1 }; 
-    }
+    for(let i=0; i<config.curses; i++) { const start = pullRandom(); if(start) specials[start] = { type: 'curse' }; }
+    for(let i=0; i<config.blessings; i++) { const start = pullRandom(); if(start) specials[start] = { type: 'bless' }; }
+    for(let i=0; i<config.cards; i++) { const start = pullRandom(); if(start) specials[start] = { type: 'card', val: Math.random() > 0.7 ? 2 : 1 }; }
 
     return specials;
 };
@@ -141,12 +125,8 @@ const getBoardCells = () => {
     return cells;
 };
 
-// --- Mathematical Engine to find upward facing dice side ---
 const findFace = (rx, ry, rz) => {
-    const radX = rx * Math.PI / 180;
-    const radY = ry * Math.PI / 180;
-    const radZ = rz * Math.PI / 180;
-    
+    const radX = rx * Math.PI / 180; const radY = ry * Math.PI / 180; const radZ = rz * Math.PI / 180;
     const cx = Math.cos(radX), sx = Math.sin(radX);
     const cy = Math.cos(radY), sy = Math.sin(radY);
     const cz = Math.cos(radZ), sz = Math.sin(radZ);
@@ -154,31 +134,16 @@ const findFace = (rx, ry, rz) => {
     let bestFace = 1;
     let maxZ = -Infinity;
 
-    // Normal vectors for each face of the dice in local space
     const normals = [
-        {f: 1, x: 0, y: 0, z: 1},    // Front
-        {f: 2, x: -1, y: 0, z: 0},   // Left (rotateY(-90))
-        {f: 3, x: 0, y: 0, z: -1},   // Back
-        {f: 4, x: 1, y: 0, z: 0},    // Right
-        {f: 5, x: 0, y: -1, z: 0},   // Top (rotateX(90) relative to standard)
-        {f: 6, x: 0, y: 1, z: 0}     // Bottom
+        {f: 1, x: 0, y: 0, z: 1}, {f: 2, x: -1, y: 0, z: 0}, {f: 3, x: 0, y: 0, z: -1},
+        {f: 4, x: 1, y: 0, z: 0}, {f: 5, x: 0, y: -1, z: 0}, {f: 6, x: 0, y: 1, z: 0}
     ];
 
     for (let n of normals) {
-        let x1 = n.x * cz - n.y * sz;
-        let y1 = n.x * sz + n.y * cz;
-        let z1 = n.z;
-
-        let x2 = x1 * cy + z1 * sy;
-        let y2 = y1;
-        let z2 = -x1 * sy + z1 * cy;
-
+        let x1 = n.x * cz - n.y * sz; let y1 = n.x * sz + n.y * cz; let z1 = n.z;
+        let x2 = x1 * cy + z1 * sy; let y2 = y1; let z2 = -x1 * sy + z1 * cy;
         let z3 = y2 * sx + z2 * cx;
-
-        if (z3 > maxZ) {
-            maxZ = z3;
-            bestFace = n.f;
-        }
+        if (z3 > maxZ) { maxZ = z3; bestFace = n.f; }
     }
     return bestFace;
 };
@@ -189,20 +154,30 @@ export default function App() {
     const [roomId, setRoomId] = useState(null);
     const [roomData, setRoomData] = useState(null);
     const [loading, setLoading] = useState(true);
+    const [authError, setAuthError] = useState(null); // Added strong error tracking!
     
     useEffect(() => {
         const initAuth = async () => {
             try {
-              await signInAnonymously(auth);
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                } else {
+                    await signInAnonymously(auth);
+                }
             } catch (err) {
                 console.error("Auth Error", err);
+                setAuthError(err.message);
+                setLoading(false);
             }
         };
         initAuth();
 
         const unsubscribe = onAuthStateChanged(auth, (u) => {
-            setUser(u);
-            setLoading(false);
+            if (u) {
+                setUser(u);
+                setAuthError(null);
+                setLoading(false);
+            }
         });
         return () => unsubscribe();
     }, []);
@@ -218,10 +193,37 @@ export default function App() {
                 setRoomId(null);
                 setRoomData(null);
             }
-        }, (err) => console.error("Firestore Listen Error:", err));
+        }, (err) => {
+            console.error("Firestore Listen Error:", err);
+            if(err.code === 'permission-denied') setAuthError("Firestore Permission Denied. Is Test Mode enabled?");
+        });
 
         return () => unsubscribe();
     }, [user, roomId]);
+
+    // Show a massive error screen if Firebase fails, preventing the silent button freeze
+    if (authError) {
+        return (
+            <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center text-white p-4 text-center">
+                <div className="bg-red-900/40 border-2 border-red-500/50 p-8 rounded-2xl max-w-lg shadow-2xl">
+                    <Skull size={48} className="text-red-400 mx-auto mb-4" />
+                    <h2 className="text-2xl font-bold mb-2 text-red-300">Firebase Connection Failed</h2>
+                    <p className="text-slate-300 text-sm mb-6 bg-black/30 p-3 rounded font-mono break-words">{authError}</p>
+                    <div className="text-left text-sm text-slate-300 space-y-2">
+                        <p><strong>To fix this, check your Firebase Console:</strong></p>
+                        <ul className="list-disc pl-5 space-y-1">
+                            <li>Go to Authentication &gt; Settings &gt; Authorized Domains and ensure your URL (e.g. <b>crostiam.github.io</b>) is added.</li>
+                            <li>Go to Authentication &gt; Sign-in method and ensure <b>Anonymous</b> is enabled.</li>
+                            <li>If running locally, disable your AdBlocker.</li>
+                        </ul>
+                    </div>
+                    <button onClick={() => window.location.reload()} className="mt-6 w-full bg-slate-800 hover:bg-slate-700 text-white font-bold py-3 rounded-xl transition-colors border border-slate-600">
+                        Retry Connection
+                    </button>
+                </div>
+            </div>
+        );
+    }
 
     if (loading) {
         return <div className="min-h-screen bg-slate-900 flex items-center justify-center text-white font-bold animate-pulse">Summoning Magic...</div>;
@@ -254,72 +256,89 @@ function LobbyScreen({ user, setRoomId }) {
 
     const handleCreate = async () => {
         if (!name.trim()) return setError("Please enter a name");
-        setIsProcessing(true);
-        const newRoomId = Math.random().toString(36).substring(2, 6).toUpperCase();
-        const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'snakes_rooms', newRoomId);
+        if (!user) return setError("Not connected to database!");
         
-        await setDoc(roomRef, {
-            status: 'waiting',
-            turnIndex: 0,
-            winner: null,
-            boardSpecials: generateBoardSpecials(boardConfig),
-            logs: ["Room created. Waiting for players..."],
-            players: [{
-                id: user.uid,
-                name: name.trim(),
-                class: selectedClass,
-                emoji: selectedEmoji,
-                color: COLORS[0],
-                position: 1,
-                cards: [],
-                hasShield: false,
-                usedKnightCurse: false,
-                usedKnightSnake: false,
-                diceModifier: null
-            }]
-        });
-        setRoomId(newRoomId);
-        setIsProcessing(false);
-    };
-
-    const handleJoin = async () => {
-        if (!name.trim()) return setError("Please enter a name");
-        if (!roomCodeInput.trim()) return setError("Enter a room code");
         setIsProcessing(true);
         setError('');
-
-        const code = roomCodeInput.trim().toUpperCase();
-        const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'snakes_rooms', code);
-        const snap = await getDoc(roomRef);
-
-        if (snap.exists()) {
-            const data = snap.data();
-            if (data.status !== 'waiting' && !data.players.find(p => p.id === user.uid)) {
-                setError("Game already in progress!");
-                setIsProcessing(false);
-                return;
-            }
-            if (!data.players.find(p => p.id === user.uid)) {
-                const newPlayer = {
+        
+        try {
+            const newRoomId = Math.random().toString(36).substring(2, 6).toUpperCase();
+            const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'snakes_rooms', newRoomId);
+            
+            await setDoc(roomRef, {
+                status: 'waiting',
+                turnIndex: 0,
+                winner: null,
+                boardSpecials: generateBoardSpecials(boardConfig),
+                logs: ["Room created. Waiting for players..."],
+                players: [{
                     id: user.uid,
                     name: name.trim(),
                     class: selectedClass,
                     emoji: selectedEmoji,
-                    color: COLORS[data.players.length % COLORS.length],
+                    color: COLORS[0],
                     position: 1,
                     cards: [],
                     hasShield: false,
                     usedKnightCurse: false,
                     usedKnightSnake: false,
                     diceModifier: null
-                };
-                await updateDoc(roomRef, { players: [...data.players, newPlayer] });
-            }
-            setRoomId(code);
-        } else {
-            setError("Room not found!");
+                }]
+            });
+            setRoomId(newRoomId);
+        } catch (err) {
+            console.error(err);
+            setError("Failed to create room: " + err.message);
+        } finally {
+            setIsProcessing(false); // ALWAYS release the button freeze!
         }
-        setIsProcessing(false);
+    };
+
+    const handleJoin = async () => {
+        if (!name.trim()) return setError("Please enter a name");
+        if (!roomCodeInput.trim()) return setError("Enter a room code");
+        if (!user) return setError("Not connected to database!");
+        
+        setIsProcessing(true);
+        setError('');
+
+        try {
+            const code = roomCodeInput.trim().toUpperCase();
+            const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'snakes_rooms', code);
+            const snap = await getDoc(roomRef);
+
+            if (snap.exists()) {
+                const data = snap.data();
+                if (data.status !== 'waiting' && !data.players.find(p => p.id === user.uid)) {
+                    setError("Game already in progress!");
+                    return;
+                }
+                if (!data.players.find(p => p.id === user.uid)) {
+                    const newPlayer = {
+                        id: user.uid,
+                        name: name.trim(),
+                        class: selectedClass,
+                        emoji: selectedEmoji,
+                        color: COLORS[data.players.length % COLORS.length],
+                        position: 1,
+                        cards: [],
+                        hasShield: false,
+                        usedKnightCurse: false,
+                        usedKnightSnake: false,
+                        diceModifier: null
+                    };
+                    await updateDoc(roomRef, { players: [...data.players, newPlayer] });
+                }
+                setRoomId(code);
+            } else {
+                setError("Room not found!");
+            }
+        } catch (err) {
+            console.error(err);
+            setError("Failed to join room: " + err.message);
+        } finally {
+            setIsProcessing(false); // ALWAYS release the button freeze!
+        }
     };
 
     return (
@@ -425,7 +444,7 @@ function LobbyScreen({ user, setRoomId }) {
                 </div>
 
                 <div className="flex gap-3">
-                    <button onClick={handleCreate} disabled={isProcessing} className="flex-1 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white font-bold py-3 px-4 rounded-xl shadow-lg transition-transform transform hover:-translate-y-0.5">
+                    <button onClick={handleCreate} disabled={isProcessing} className="flex-1 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white font-bold py-3 px-4 rounded-xl shadow-lg transition-transform transform hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none">
                         Create Room
                     </button>
                     <div className="flex-1 flex gap-2">
@@ -433,7 +452,7 @@ function LobbyScreen({ user, setRoomId }) {
                             className="w-full bg-slate-900/50 border border-slate-600 rounded-xl px-3 text-center uppercase tracking-widest font-mono text-lg focus:outline-none focus:border-indigo-500 shadow-inner"
                             placeholder="CODE"
                         />
-                        <button onClick={handleJoin} disabled={isProcessing} className="bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 px-4 rounded-xl shadow-lg transition-transform transform hover:-translate-y-0.5">
+                        <button onClick={handleJoin} disabled={isProcessing} className="bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 px-4 rounded-xl shadow-lg transition-transform transform hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none">
                             Join
                         </button>
                     </div>
@@ -530,7 +549,6 @@ function GameRoom({ user, roomId, setRoomId, roomData }) {
         if (roomData?.status === 'waiting_for_move') {
             setDiceWindowOpen(true);
             
-            // Smoothly move dice to center and rotate to exact base face
             if (diceRef.current) {
                 const targetRotations = {
                     1: { x: 0, y: 0 }, 2: { x: 0, y: -90 }, 3: { x: 0, y: 180 },
@@ -546,7 +564,6 @@ function GameRoom({ user, roomId, setRoomId, roomData }) {
                 shadowRef.current.style.opacity = 0.7;
             }
 
-            // Auto-close after reading the math
             const timer = setTimeout(() => {
                 setDiceWindowOpen(false);
             }, 3500);
@@ -566,26 +583,21 @@ function GameRoom({ user, roomId, setRoomId, roomData }) {
             if (diceRef.current) diceRef.current.style.transition = 'none';
             if (shadowRef.current) shadowRef.current.style.transition = 'none';
             
-            // Initial variables retrieved from the synced server seed
             let pos = { ...roomData.physicsSeed.pos };
             let vel = { ...roomData.physicsSeed.vel };
             let rot = { ...roomData.physicsSeed.rot };
             let rotVel = { ...roomData.physicsSeed.rotVel };
             
-            const floorY = 160;     // Perfect height for visually hitting the table
-            const ceilingY = -300;  // Invisible ceiling constraint
+            const floorY = 160;     
+            const ceilingY = -300;  
             const gravity = 1.2;
             const bounce = -0.6;
             
             let state = 'flying';
             
             const targetRotations = {
-                1: { x: 0, y: 0 },
-                2: { x: 0, y: -90 },
-                3: { x: 0, y: 180 },
-                4: { x: 0, y: 90 },
-                5: { x: -90, y: 0 },
-                6: { x: 90, y: 0 },
+                1: { x: 0, y: 0 }, 2: { x: 0, y: -90 }, 3: { x: 0, y: 180 },
+                4: { x: 0, y: 90 }, 5: { x: -90, y: 0 }, 6: { x: 90, y: 0 },
             };
             const tRot = targetRotations[roomData.diceBase] || {x:0, y:0};
 
@@ -604,45 +616,18 @@ function GameRoom({ user, roomId, setRoomId, roomData }) {
 
             const updatePhysics = () => {
                 if (state === 'flying' || state === 'bouncing') {
-                    vel.y += gravity;
-                    pos.x += vel.x;
-                    pos.y += vel.y;
+                    vel.y += gravity; pos.x += vel.x; pos.y += vel.y;
+                    rot.x += rotVel.x; rot.y += rotVel.y; rot.z += rotVel.z;
+                    const wallX = 130; 
+
+                    if (pos.x > wallX) { pos.x = wallX; vel.x *= bounce; rotVel.y *= 0.8; rotVel.z *= 0.8; } 
+                    else if (pos.x < -wallX) { pos.x = -wallX; vel.x *= bounce; rotVel.y *= 0.8; rotVel.z *= 0.8; }
+                    if (pos.y < ceilingY) { pos.y = ceilingY; vel.y *= bounce; }
                     
-                    rot.x += rotVel.x;
-                    rot.y += rotVel.y;
-                    rot.z += rotVel.z;
-
-                    const wallX = 130; // Solid invisible side walls
-
-                    // Collision with walls (X-axis)
-                    if (pos.x > wallX) {
-                        pos.x = wallX;
-                        vel.x *= bounce; // bounce back
-                        rotVel.y *= 0.8; // hitting wall dampens spin
-                        rotVel.z *= 0.8;
-                    } else if (pos.x < -wallX) {
-                        pos.x = -wallX;
-                        vel.x *= bounce;
-                        rotVel.y *= 0.8;
-                        rotVel.z *= 0.8;
-                    }
-
-                    // Collision with ceiling
-                    if (pos.y < ceilingY) {
-                        pos.y = ceilingY;
-                        vel.y *= bounce; // Deflect down!
-                    }
-                    
-                    // Collision with floor (Table)
                     if (pos.y > floorY) {
-                        pos.y = floorY;
-                        vel.y *= bounce;
-                        vel.x *= 0.85; 
-                        rotVel.x *= 0.75; 
-                        rotVel.y *= 0.75; 
-                        rotVel.z *= 0.75;
+                        pos.y = floorY; vel.y *= bounce; vel.x *= 0.85; 
+                        rotVel.x *= 0.75; rotVel.y *= 0.75; rotVel.z *= 0.75;
 
-                        // Trigger the settle state when kinetic energy drops low enough
                         if (Math.abs(vel.y) < 4 && Math.abs(pos.y - floorY) < 5) {
                             state = 'settling';
                             startSettleRot = { ...rot };
@@ -667,14 +652,12 @@ function GameRoom({ user, roomId, setRoomId, roomData }) {
                         }
                     }
                     
-                    // Smooth visual settle to the correct upward-facing number
                     let ease = 1 - Math.pow(1 - settlingProgress, 3);
                     rot.x = startSettleRot.x + (targetSettleRot.x - startSettleRot.x) * ease;
                     rot.y = startSettleRot.y + (targetSettleRot.y - startSettleRot.y) * ease;
                     rot.z = startSettleRot.z + (targetSettleRot.z - startSettleRot.z) * ease;
                 }
                 
-                // Update CSS visually
                 if (diceRef.current) {
                     diceRef.current.style.transform = `translate3d(${pos.x}px, ${pos.y}px, 0px) rotateX(${rot.x}deg) rotateY(${rot.y}deg) rotateZ(${rot.z}deg)`;
                 }
@@ -699,7 +682,6 @@ function GameRoom({ user, roomId, setRoomId, roomData }) {
         };
     }, [roomData?.status, roomData?.physicsSeed, roomData?.diceBase, myPlayerIndex, roomId]);
 
-    // --- Swipe/Drag To Throw Handlers ---
     const handleDicePointerDown = (e) => {
         if (!isMyTurn || roomData.status !== 'playing') return;
         e.stopPropagation();
@@ -714,45 +696,36 @@ function GameRoom({ user, roomId, setRoomId, roomData }) {
     const handleOverlayPointerUp = () => {
         if (!diceGrab.active) return;
         const dist = Math.sqrt(diceGrab.offsetX**2 + diceGrab.offsetY**2);
-        if (dist > 30) { // Dragged enough to snap back and launch!
+        if (dist > 30) {
             triggerRoll(diceGrab.offsetY, diceGrab.offsetX);
         }
-        setDiceGrab({ active: false, startX: 0, startY: 0, offsetX: 0, offsetY: 0 }); // Snap back
+        setDiceGrab({ active: false, startX: 0, startY: 0, offsetX: 0, offsetY: 0 }); 
     };
 
-    // --- Game Logic Engine ---
     const applySpecialTile = (playerIdx, dataRef) => {
         let p = dataRef.players[playerIdx];
         let requiresTargeting = false;
         let resolving = true;
 
-        // Loop handles chain reactions! If a snake drops you on a card, it triggers the card!
         while (resolving && p.position < 100) {
             let tile = dataRef.boardSpecials ? dataRef.boardSpecials[p.position] : null;
 
-            if (!tile) {
-                resolving = false;
-                break;
-            }
+            if (!tile) { resolving = false; break; }
 
             if (tile.type === 'snake') {
                 if (p.class === 'knight' && !p.usedKnightSnake) {
                     dataRef.logs.push(`🛡️ ${p.name} (Knight) passively resisted the Snake!`);
-                    p.usedKnightSnake = true;
-                    resolving = false;
+                    p.usedKnightSnake = true; resolving = false;
                 } else if (p.hasShield) {
                     dataRef.logs.push(`🛡️ ${p.name} blocked the Snake with a Magic Shield!`);
-                    p.hasShield = false;
-                    resolving = false;
+                    p.hasShield = false; resolving = false;
                 } else {
                     dataRef.logs.push(`🐍 Oh no! ${p.name} slid down a Snake to ${tile.to}.`);
                     p.position = tile.to;
-                    // Do not set resolving = false, allow the loop to check the new tile!
                 }
             } else if (tile.type === 'ladder') {
                 dataRef.logs.push(`🪜 Nice! ${p.name} climbed a Ladder to ${tile.to}.`);
                 p.position = tile.to;
-                // Do not set resolving = false, allow the loop to check the new tile!
             } else if (tile.type === 'curse') {
                 if (p.class === 'knight' && !p.usedKnightCurse) {
                     dataRef.logs.push(`🛡️ ${p.name} (Knight) passively resisted the Curse!`);
@@ -784,14 +757,7 @@ function GameRoom({ user, roomId, setRoomId, roomData }) {
                 resolving = false;
             } else if (tile.type === 'card') {
                 let cardsToDraw = tile.val;
-                if (p.class === 'alchemist') {
-                    cardsToDraw += 1;
-                    dataRef.logs.push(`🧪 ${p.name} (Alchemist) brewed an extra card!`);
-                }
-                if (p.class === 'berserker') {
-                    p.diceModifier = { val: 2, rollsLeft: 1 };
-                    dataRef.logs.push(`🔥 ${p.name} (Berserker) goes into a rage! +2 to next roll.`);
-                }
+                if (p.class === 'alchemist') { cardsToDraw += 1; dataRef.logs.push(`🧪 ${p.name} (Alchemist) brewed an extra card!`); }
                 dataRef.logs.push(`🃏 ${p.name} found ${cardsToDraw} Spell Card(s)!`);
                 for(let i=0; i<cardsToDraw; i++) p.cards.push(getRandomCard(p.class));
                 resolving = false;
@@ -799,9 +765,7 @@ function GameRoom({ user, roomId, setRoomId, roomData }) {
         }
 
         if (p.position >= 100) {
-            p.position = 100;
-            dataRef.status = 'finished';
-            dataRef.winner = p.name;
+            p.position = 100; dataRef.status = 'finished'; dataRef.winner = p.name;
             dataRef.logs.push(`🏆 ${p.name} REACHED 100 AND WON!`);
         }
         return { newData: dataRef, requiresTargeting };
@@ -825,7 +789,6 @@ function GameRoom({ user, roomId, setRoomId, roomData }) {
         await updateDoc(roomRef, resolvedData);
     };
 
-    // --- Actions ---
     const startGame = async () => {
         let roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'snakes_rooms', roomId);
         let freshPlayers = roomData.players.map(p => {
@@ -839,17 +802,11 @@ function GameRoom({ user, roomId, setRoomId, roomData }) {
     const triggerRoll = async (offsetY, offsetX) => {
         if (!isMyTurn || roomData.status === 'rolling' || roomData.status === 'targeting') return;
         
-        // Convert the slingshot drag into an upward explosive velocity
         const launchVelY = Math.max(-75, Math.min(-25, -Math.abs(offsetY) * 0.4));
         const launchVelX = offsetX ? Math.max(-25, Math.min(25, -offsetX * 0.15)) : (Math.random() - 0.5) * 15;
         
-        // --- TRUE PHYSICS OUTCOME PRE-SIMULATION ---
         let pos = { x: offsetX ? offsetX * 0.2 : 0, y: offsetY ? offsetY * 0.2 : 0, z: 0 };
-        let vel = { 
-            x: launchVelX, 
-            y: launchVelY, 
-            z: 0 
-        };
+        let vel = { x: launchVelX, y: launchVelY, z: 0 };
         let rot = { x: Math.random() * 360, y: Math.random() * 360, z: Math.random() * 360 };
         let rotVel = { 
             x: (Math.random() - 0.5) * 50 + 25 * Math.sign(Math.random() - 0.5), 
@@ -859,59 +816,32 @@ function GameRoom({ user, roomId, setRoomId, roomData }) {
         
         const physicsSeed = { pos: {...pos}, vel: {...vel}, rot: {...rot}, rotVel: {...rotVel} };
 
-        // Silently run the precise physical loop instantly to get the mathematically correct outcome
-        const floorY = 160; 
-        const ceilingY = -300;
-        const gravity = 1.2;
-        const bounce = -0.6;
-        
+        const floorY = 160; const ceilingY = -300; const gravity = 1.2; const bounce = -0.6;
         let simPos = {...pos}, simVel = {...vel}, simRot = {...rot};
         let loops = 0;
+        
         while(loops < 600) {
             loops++;
-            simVel.y += gravity;
-            simPos.x += simVel.x;
-            simPos.y += simVel.y;
+            simVel.y += gravity; simPos.x += simVel.x; simPos.y += simVel.y;
             simRot.x += rotVel.x; simRot.y += rotVel.y; simRot.z += rotVel.z;
-            
-            const wallX = 130; // Mathematical walls for precise outcome
+            const wallX = 130; 
 
-            // Collision with walls (X-axis)
-            if (simPos.x > wallX) {
-                simPos.x = wallX;
-                simVel.x *= bounce;
-                rotVel.y *= 0.8;
-                rotVel.z *= 0.8;
-            } else if (simPos.x < -wallX) {
-                simPos.x = -wallX;
-                simVel.x *= bounce;
-                rotVel.y *= 0.8;
-                rotVel.z *= 0.8;
-            }
-
-            if (simPos.y < ceilingY) {
-                simPos.y = ceilingY;
-                simVel.y *= bounce; 
-            }
-
+            if (simPos.x > wallX) { simPos.x = wallX; simVel.x *= bounce; rotVel.y *= 0.8; rotVel.z *= 0.8; } 
+            else if (simPos.x < -wallX) { simPos.x = -wallX; simVel.x *= bounce; rotVel.y *= 0.8; rotVel.z *= 0.8; }
+            if (simPos.y < ceilingY) { simPos.y = ceilingY; simVel.y *= bounce; }
             if (simPos.y > floorY) {
-                simPos.y = floorY;
-                simVel.y *= bounce;
-                simVel.x *= 0.85;
+                simPos.y = floorY; simVel.y *= bounce; simVel.x *= 0.85;
                 rotVel.x *= 0.75; rotVel.y *= 0.75; rotVel.z *= 0.75;
-
                 if (Math.abs(simVel.y) < 4 && Math.abs(simPos.y - floorY) < 5) break;
             }
         }
 
-        // Determine actual base roll entirely dictated by the physics rotation resting point!
         const baseRoll = findFace(simRot.x, simRot.y, simRot.z);
-        // ------------------------------------------
 
         let p = roomData.players[myPlayerIndex];
         let actualRoll = baseRoll;
         
-        if (p.class === 'berserker' && actualRoll === 1) actualRoll = 2; // Berserkers force 2s!
+        if (p.class === 'berserker' && actualRoll === 1) actualRoll = 2; 
         if (p.class === 'rogue') actualRoll += 1;
         if (p.diceModifier && p.diceModifier.rollsLeft > 0) actualRoll += p.diceModifier.val;
         
@@ -919,10 +849,7 @@ function GameRoom({ user, roomId, setRoomId, roomData }) {
 
         let roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'snakes_rooms', roomId);
         await updateDoc(roomRef, { 
-            status: 'rolling', 
-            diceBase: baseRoll, 
-            diceActual: actualRoll,
-            physicsSeed: physicsSeed 
+            status: 'rolling', diceBase: baseRoll, diceActual: actualRoll, physicsSeed: physicsSeed 
         });
     };
 
@@ -950,7 +877,6 @@ function GameRoom({ user, roomId, setRoomId, roomData }) {
         const cellId = cell?.getAttribute('data-cell');
 
         if (cellId && parseInt(cellId) === expectedTarget) {
-            // Valid manual move!
             const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'snakes_rooms', roomId);
             const snap = await getDoc(roomRef);
             if (!snap.exists()) return;
@@ -966,7 +892,6 @@ function GameRoom({ user, roomId, setRoomId, roomData }) {
             
             freshData.logs.push(rollLog);
 
-            // Decrement active modifiers
             if (p.diceModifier && p.diceModifier.rollsLeft > 0) {
                 p.diceModifier.rollsLeft -= 1;
                 if(p.diceModifier.rollsLeft <= 0) p.diceModifier = null;
@@ -1023,7 +948,13 @@ function GameRoom({ user, roomId, setRoomId, roomData }) {
         if (cardId === 'sabotage' || cardId === 'meteor' || cardId === 'gust') {
             const pushBack = cardId === 'sabotage' ? 2 : (cardId === 'meteor' ? 4 : 1);
             newData.players.forEach((opp, i) => {
-                if (i !== myPlayerIndex) opp.position = Math.max(1, opp.position - pushBack);
+                if (i !== myPlayerIndex) {
+                    opp.position = Math.max(1, opp.position - pushBack);
+                    if (opp.class === 'berserker') {
+                        opp.diceModifier = { val: 2, rollsLeft: 1 };
+                        newData.logs.push(`🔥 ${opp.name} (Berserker) enraged by spell! +2 to next roll.`);
+                    }
+                }
             });
             if (cardId === 'gust') newData.logs.push(`💨 A wind gust pushed all opponents back 1 space!`);
             if (cardId === 'meteor') newData.logs.push(`☄️ A massive meteor struck! Opponents pushed back 4 spaces!`);
@@ -1034,9 +965,13 @@ function GameRoom({ user, roomId, setRoomId, roomData }) {
             if(opps.length > 0) {
                 let randomOpp = opps[Math.floor(Math.random() * opps.length)];
                 let tempPos = p.position;
-                p.position = randomOpp.opp.position;
-                randomOpp.opp.position = tempPos;
-                newData.logs.push(`🌀 ${p.name} swapped places with ${randomOpp.opp.name}!`);
+                p.position = randomOpp.o.position;
+                randomOpp.o.position = tempPos;
+                newData.logs.push(`🌀 ${p.name} swapped places with ${randomOpp.o.name}!`);
+                if (randomOpp.o.class === 'berserker') {
+                    randomOpp.o.diceModifier = { val: 2, rollsLeft: 1 };
+                    newData.logs.push(`🔥 ${randomOpp.o.name} (Berserker) enraged by swap! +2 to next roll.`);
+                }
             }
         } else if (cardId === 'thief') {
             let oppsWithCards = newData.players.map((opp, i) => ({opp, i})).filter(x => x.i !== myPlayerIndex && x.opp.cards.length > 0);
@@ -1046,6 +981,10 @@ function GameRoom({ user, roomId, setRoomId, roomData }) {
                 p.cards.push(stolen);
                 const stolenName = CARDS[stolen]?.name || MAGE_CARDS[stolen]?.name;
                 newData.logs.push(`🦹 ${p.name} stole ${stolenName} from ${randomOpp.opp.name}!`);
+                if (randomOpp.opp.class === 'berserker') {
+                    randomOpp.opp.diceModifier = { val: 2, rollsLeft: 1 };
+                    newData.logs.push(`🔥 ${randomOpp.opp.name} (Berserker) enraged by thief! +2 to next roll.`);
+                }
             } else {
                  newData.logs.push(`🦹 ${p.name} tried to steal, but nobody had any cards!`);
             }
@@ -1085,13 +1024,10 @@ function GameRoom({ user, roomId, setRoomId, roomData }) {
         await updateDoc(roomRef, newData);
     };
 
-    // --- Render Helpers ---
     const renderCell = (num) => {
         const special = roomData.boardSpecials ? roomData.boardSpecials[num] : null;
         
-        let i = num - 1;
-        let row = 9 - Math.floor(i / 10);
-        let col = i % 10;
+        let i = num - 1; let row = 9 - Math.floor(i / 10); let col = i % 10;
         let isDark = (row % 2 === 0) ? (col % 2 === 0) : (col % 2 !== 0);
         
         let bg = isDark ? 'bg-slate-800/80' : 'bg-slate-700/80';
@@ -1120,16 +1056,12 @@ function GameRoom({ user, roomId, setRoomId, roomData }) {
         );
     };
 
-    // Render the physical tokens flying across the board
     const PlayerTokensOverlay = () => (
         <div className="absolute inset-0 pointer-events-none z-30">
             {roomData.players.map((p, idx) => {
-                let i = p.position - 1;
-                let row = 9 - Math.floor(i / 10);
-                let col = i % 10;
+                let i = p.position - 1; let row = 9 - Math.floor(i / 10); let col = i % 10;
                 if ((9 - row) % 2 !== 0) col = 9 - col;
 
-                // Stagger players slightly so they don't perfectly overlap on the same tile
                 const offsetXPx = [0, -8, 8, -8, 8, 0, 0][idx] || 0;
                 const offsetYPx = [0, -8, -8, 8, 8, 12, -12][idx] || 0;
 
@@ -1139,24 +1071,13 @@ function GameRoom({ user, roomId, setRoomId, roomData }) {
                 const isDraggingThis = isDraggable && dragState.isDragging;
 
                 let style = { 
-                    backgroundColor: p.color,
-                    touchAction: 'none', // Prevents scrolling on mobile devices while dragging
-                    top: `calc(${row * 10}% + 5% + ${offsetYPx}px)`,
-                    left: `calc(${col * 10}% + 5% + ${offsetXPx}px)`,
-                    transform: 'translate(-50%, -50%)',
-                    transition: 'top 0.7s cubic-bezier(0.34, 1.56, 0.64, 1), left 0.7s cubic-bezier(0.34, 1.56, 0.64, 1)' // smooth bouncy curve
+                    backgroundColor: p.color, touchAction: 'none',
+                    top: `calc(${row * 10}% + 5% + ${offsetYPx}px)`, left: `calc(${col * 10}% + 5% + ${offsetXPx}px)`,
+                    transform: 'translate(-50%, -50%)', transition: 'top 0.7s cubic-bezier(0.34, 1.56, 0.64, 1), left 0.7s cubic-bezier(0.34, 1.56, 0.64, 1)'
                 };
 
                 if (isDraggingThis) {
-                  style = {
-                      ...style,
-                        
-                        left: dragState.clientX + 'px',
-                        top: dragState.clientY + 'px',
-                        transform: 'translate(-50%, -50%) scale(1.5)',
-                        transition: 'none', // Snap instantly to mouse when dragging
-                        zIndex: 9999
-                    };
+                    style = { ...style, position: 'fixed', left: dragState.clientX + 'px', top: dragState.clientY + 'px', transform: 'translate(-50%, -50%) scale(1.5)', transition: 'none', zIndex: 9999, pointerEvents: 'none' };
                 }
 
                 return (
@@ -1164,9 +1085,6 @@ function GameRoom({ user, roomId, setRoomId, roomData }) {
                          className={`absolute w-5 h-5 sm:w-7 sm:h-7 rounded-full shadow-[0_5px_10px_rgba(0,0,0,0.9)] flex items-center justify-center text-[11px] sm:text-sm text-white font-black border-2 border-white/50 z-40 pointer-events-auto ${isDraggable && !isDraggingThis ? 'cursor-grab animate-bounce ring-4 ring-white' : ''} ${isDraggingThis ? 'cursor-grabbing' : ''}`}
                          style={style}
                          onPointerDown={isDraggable ? (e) => handlePointerDown(e, idx) : undefined}
-                         onPointerMove={isDraggable ? handlePointerMove : undefined}
-                         onPointerUp={isDraggable ? handlePointerUp : undefined}
-                         onPointerCancel={isDraggable ? handlePointerUp : undefined}
                          >
                         {p.emoji || p.name.charAt(0).toUpperCase()}
                         {p.hasShield && <div className="absolute -top-1.5 -right-1.5 bg-blue-500 rounded-full p-[1px] shadow-lg"><Shield size={10} className="text-white"/></div>}
@@ -1180,7 +1098,10 @@ function GameRoom({ user, roomId, setRoomId, roomData }) {
         <div className="h-screen bg-slate-950 text-slate-100 flex flex-col font-sans overflow-hidden selection:bg-indigo-500/30 select-none">
             {toast && <div className="fixed top-4 left-1/2 transform -translate-x-1/2 bg-indigo-600 px-5 py-2 rounded-full shadow-[0_0_15px_rgba(79,70,229,0.5)] z-50 text-sm font-bold animate-pulse border border-indigo-400">{toast}</div>}
             
-            {/* Header */}
+            {dragState.isDragging && (
+                <div className="fixed inset-0 z-[9998] cursor-grabbing touch-none" onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerCancel={handlePointerUp} />
+            )}
+
             <header className="bg-slate-900 border-b border-slate-800 p-2 sm:p-3 flex justify-between items-center shrink-0 z-20 shadow-md">
                 <div className="flex items-center gap-2">
                     <Swords className="text-indigo-400 w-5 h-5 sm:w-6 sm:h-6" />
@@ -1203,7 +1124,6 @@ function GameRoom({ user, roomId, setRoomId, roomData }) {
                 </div>
             </header>
 
-            {/* Content Body */}
             {roomData.status === 'waiting' ? (
                 <div className="flex-1 overflow-auto flex flex-col items-center justify-center p-4 bg-gradient-to-br from-slate-950 to-indigo-950/20">
                     <div className="max-w-md w-full bg-slate-800/90 backdrop-blur p-6 sm:p-8 rounded-2xl border border-indigo-500/30 shadow-2xl text-center">
@@ -1238,7 +1158,6 @@ function GameRoom({ user, roomId, setRoomId, roomData }) {
                 </div>
             ) : (
                 <main className="flex-1 w-full max-w-7xl mx-auto p-2 sm:p-4 flex flex-col md:flex-row gap-4 overflow-hidden">
-                    {/* Game Board */}
                     <div className="w-full md:w-2/3 h-[50vh] md:h-full flex items-center justify-center relative">
                         <div className="w-full max-h-full aspect-square bg-slate-900 rounded-2xl border-[6px] border-slate-800 overflow-hidden shadow-[0_0_30px_rgba(0,0,0,0.8)] relative">
                             <div className="absolute inset-0 grid grid-cols-10 grid-rows-10">
@@ -1249,10 +1168,7 @@ function GameRoom({ user, roomId, setRoomId, roomData }) {
                         </div>
                     </div>
 
-                    {/* Controls Sidebar */}
                     <div className="w-full md:w-1/3 flex flex-col gap-3 md:gap-4 overflow-y-auto h-[40vh] md:h-full pb-2 hide-scrollbar">
-                        
-                        {/* Status Area */}
                         <div className="bg-slate-800/90 rounded-2xl border border-slate-700 p-5 shadow-xl shrink-0 relative overflow-hidden flex flex-col items-center">
                             {isMyTurn && roomData.status === 'playing' && <div className="absolute inset-0 bg-indigo-500/10 animate-pulse pointer-events-none"></div>}
                             
@@ -1264,7 +1180,6 @@ function GameRoom({ user, roomId, setRoomId, roomData }) {
                                 </div>
                             </div>
 
-                            {/* Main Interaction Button/UI */}
                             <div className="w-full z-10">
                                 {roomData.status === 'finished' ? (
                                     <div className="text-center py-2">
@@ -1299,7 +1214,6 @@ function GameRoom({ user, roomId, setRoomId, roomData }) {
                                 )}
                             </div>
 
-                            {/* Cards UI */}
                             {myPlayer?.cards.length > 0 && roomData.status === 'playing' && (
                                 <div className="mt-4 w-full z-10">
                                     <div className="text-[10px] font-bold text-indigo-300 uppercase mb-2 tracking-wider flex items-center gap-1"><Sparkles size={12}/> Your Spell Cards</div>
@@ -1324,7 +1238,6 @@ function GameRoom({ user, roomId, setRoomId, roomData }) {
                             )}
                         </div>
 
-                        {/* Players List */}
                         <div className="bg-slate-800/90 rounded-2xl border border-slate-700 p-4 shadow-xl flex-1 overflow-hidden flex flex-col min-h-[150px]">
                             <h3 className="font-bold text-sm mb-3 flex items-center gap-2 text-slate-300 shrink-0 uppercase tracking-wider">
                                 <UserPlus size={14} className="text-indigo-400" /> Live Standings
@@ -1363,7 +1276,6 @@ function GameRoom({ user, roomId, setRoomId, roomData }) {
                             </div>
                         </div>
 
-                        {/* Activity Log */}
                         <div className="bg-slate-950/80 rounded-2xl border border-slate-800 p-4 h-32 md:h-40 shrink-0 overflow-y-auto hide-scrollbar flex flex-col justify-end shadow-inner relative">
                             <div className="absolute top-0 left-0 w-full h-8 bg-gradient-to-b from-slate-950/80 to-transparent pointer-events-none"></div>
                             {roomData.logs.map((log, i) => (
@@ -1377,22 +1289,13 @@ function GameRoom({ user, roomId, setRoomId, roomData }) {
                 </main>
             )}
 
-            {/* Interactive Dice Throwing Scene */}
             <div className={`fixed inset-0 z-[100] flex flex-col items-center justify-center bg-slate-950 touch-none transition-opacity duration-300 overflow-hidden ${diceWindowOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}
-                 onPointerMove={handleOverlayPointerMove}
-                 onPointerUp={handleOverlayPointerUp}
-                 onPointerCancel={handleOverlayPointerUp}
-            >
-                {/* Wall Background */}
+                 onPointerMove={handleOverlayPointerMove} onPointerUp={handleOverlayPointerUp} onPointerCancel={handleOverlayPointerUp}>
                 <div className="absolute inset-0 bg-slate-900 z-0">
-                    <div className="absolute inset-0 opacity-30" style={{ 
-                        backgroundImage: 'linear-gradient(0deg, transparent 19px, #1e293b 20px), linear-gradient(90deg, transparent 39px, #1e293b 40px)', 
-                        backgroundSize: '40px 20px' 
-                    }}></div>
+                    <div className="absolute inset-0 opacity-30" style={{ backgroundImage: 'linear-gradient(0deg, transparent 19px, #1e293b 20px), linear-gradient(90deg, transparent 39px, #1e293b 40px)', backgroundSize: '40px 20px' }}></div>
                     <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-transparent to-black/80"></div>
                 </div>
 
-                {/* 3D Rendered Table Environment */}
                 <div className="absolute top-1/2 left-[-1000px] right-[-1000px] h-[1000px] bg-gradient-to-b from-emerald-900 to-slate-950 border-t-[16px] border-amber-900 shadow-[inset_0_40px_100px_rgba(0,0,0,1)]" 
                      style={{ transform: 'perspective(1000px) rotateX(60deg)', transformOrigin: 'top', marginTop: '30px', zIndex: 1 }}>
                      <div className="w-full h-full opacity-40 bg-[radial-gradient(circle_at_center,_transparent_0%,_#000_100%)]"></div>
@@ -1400,62 +1303,29 @@ function GameRoom({ user, roomId, setRoomId, roomData }) {
                 </div>
 
                 <div className="text-2xl sm:text-3xl font-black text-indigo-400 absolute top-20 drop-shadow-[0_0_15px_rgba(99,102,241,0.8)] text-center w-full px-4 z-20 pointer-events-none flex flex-col items-center gap-4">
-                    {roomData?.status === 'waiting_for_move' ? null : (
-                        <span>{roomData?.status === 'rolling' ? `${activePlayer?.name} is throwing...` : 'Grab & Pull the Dice to Throw!'}</span>
-                    )}
-                    
+                    {roomData?.status === 'waiting_for_move' ? null : (<span>{roomData?.status === 'rolling' ? `${activePlayer?.name} is throwing...` : 'Grab & Pull the Dice to Throw!'}</span>)}
                     {roomData?.status !== 'rolling' && roomData?.status !== 'waiting_for_move' && isMyTurn && (
-                        <button 
-                            onPointerDown={(e) => e.stopPropagation()} 
-                            onClick={(e) => { e.stopPropagation(); triggerRoll(-100, (Math.random() - 0.5) * 30); }}
-                            className={`bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold py-2 px-6 rounded-full shadow-[0_0_15px_rgba(99,102,241,0.5)] transition-transform active:scale-95 border border-indigo-400 ${diceWindowOpen ? 'pointer-events-auto' : 'pointer-events-none'}`}
-                        >
+                        <button onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); triggerRoll(-100, (Math.random() - 0.5) * 30); }} className={`bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold py-2 px-6 rounded-full shadow-[0_0_15px_rgba(99,102,241,0.5)] transition-transform active:scale-95 border border-indigo-400 ${diceWindowOpen ? 'pointer-events-auto' : 'pointer-events-none'}`}>
                             Quick Throw ⚡
                         </button>
                     )}
                 </div>
 
-                {/* Physics Dice Container */}
-                <div className="relative perspective-1000 w-32 h-32 flex items-center justify-center z-20" 
-                     style={{ 
-                         transform: roomData?.status === 'rolling' || roomData?.status === 'waiting_for_move' ? 'none' : `translate3d(${diceGrab.offsetX}px, ${diceGrab.offsetY}px, 0)`,
-                         transition: diceGrab.active ? 'none' : 'transform 0.3s ease-out'
-                     }}>
-                    <div ref={diceRef} className="preserve-3d w-full h-full absolute" 
-                         style={{ 
-                             transform: 'rotateX(-20deg) rotateY(-20deg)',
-                             cursor: (isMyTurn && roomData?.status === 'playing') ? (diceGrab.active ? 'grabbing' : 'grab') : 'default',
-                             pointerEvents: (diceWindowOpen && isMyTurn && roomData?.status === 'playing') ? 'auto' : 'none'
-                         }}
-                         onPointerDown={handleDicePointerDown}
-                    >
+                <div className="relative perspective-1000 w-32 h-32 flex items-center justify-center z-20" style={{ transform: roomData?.status === 'rolling' || roomData?.status === 'waiting_for_move' ? 'none' : `translate3d(${diceGrab.offsetX}px, ${diceGrab.offsetY}px, 0)`, transition: diceGrab.active ? 'none' : 'transform 0.3s ease-out' }}>
+                    <div ref={diceRef} className="preserve-3d w-full h-full absolute" style={{ transform: 'rotateX(-20deg) rotateY(-20deg)', cursor: (isMyTurn && roomData?.status === 'playing') ? (diceGrab.active ? 'grabbing' : 'grab') : 'default', pointerEvents: (diceWindowOpen && isMyTurn && roomData?.status === 'playing') ? 'auto' : 'none' }} onPointerDown={handleDicePointerDown}>
                         {[1, 2, 3, 4, 5, 6].map((face, i) => {
-                            const transforms = [
-                                'rotateY(0deg)', 'rotateY(-90deg)', 'rotateY(180deg)', 
-                                'rotateY(90deg)', 'rotateX(90deg)', 'rotateX(-90deg)'
-                            ];
-                            return (
-                                <div key={i} className="absolute w-full h-full bg-slate-800 border-4 border-indigo-500 shadow-[inset_0_0_30px_rgba(99,102,241,0.6)] rounded-2xl flex items-center justify-center text-6xl font-black text-white" 
-                                     style={{ transform: `${transforms[i]} translateZ(64px)` }}>
-                                    {face}
-                                </div>
-                            );
+                            const transforms = ['rotateY(0deg)', 'rotateY(-90deg)', 'rotateY(180deg)', 'rotateY(90deg)', 'rotateX(90deg)', 'rotateX(-90deg)'];
+                            return (<div key={i} className="absolute w-full h-full bg-slate-800 border-4 border-indigo-500 shadow-[inset_0_0_30px_rgba(99,102,241,0.6)] rounded-2xl flex items-center justify-center text-6xl font-black text-white" style={{ transform: `${transforms[i]} translateZ(64px)` }}>{face}</div>);
                         })}
                     </div>
                 </div>
                 
-                {/* Independent Realistic Shadow */}
                 <div ref={shadowRef} className="absolute top-1/2 left-1/2 -translate-x-1/2 w-24 h-6 bg-black/80 blur-md rounded-[100%] z-[10] opacity-0 pointer-events-none transition-opacity duration-300" style={{ marginTop: '190px' }}></div>
 
-                {/* Refined Math Breakdown Banner INSIDE the Dice Scene */}
                 {roomData?.status === 'waiting_for_move' && (
                     <div className={`absolute inset-0 z-40 flex items-center justify-center bg-slate-950/60 backdrop-blur-[2px] rounded-xl ${diceWindowOpen ? 'pointer-events-auto' : 'pointer-events-none'}`}>
                         <div className="bg-slate-900/95 border-2 border-indigo-500 rounded-3xl p-6 text-center shadow-[0_0_50px_rgba(99,102,241,0.4)] transition-all transform animate-in zoom-in duration-300 relative">
-                            
-                            <button onClick={() => setDiceWindowOpen(false)} className="absolute top-2 right-2 text-slate-400 hover:text-white bg-slate-800/80 p-1.5 rounded-full border border-slate-700 transition-colors z-40">
-                                <LogOut size={16} />
-                            </button>
-
+                            <button onClick={() => setDiceWindowOpen(false)} className="absolute top-2 right-2 text-slate-400 hover:text-white bg-slate-800/80 p-1.5 rounded-full border border-slate-700 transition-colors z-40"><LogOut size={16} /></button>
                             <div className="text-xs font-bold text-indigo-300 uppercase tracking-widest mb-1">{activePlayer?.name}'s Final Roll</div>
                             <div className="text-7xl font-black text-white drop-shadow-lg">{roomData.diceActual}</div>
                             {roomData.diceBase !== roomData.diceActual && (
@@ -1471,9 +1341,7 @@ function GameRoom({ user, roomId, setRoomId, roomData }) {
                                     <button onClick={() => setDiceWindowOpen(false)} className="mt-3 bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2 rounded-full font-bold shadow-md transition-transform active:scale-95">Close & Move</button>
                                 </div>
                             ) : (
-                                <div className="mt-4 text-slate-400 font-bold text-sm animate-pulse">
-                                    Closing automatically...
-                                </div>
+                                <div className="mt-4 text-slate-400 font-bold text-sm animate-pulse">Closing automatically...</div>
                             )}
                         </div>
                     </div>
